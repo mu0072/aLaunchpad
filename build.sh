@@ -11,6 +11,7 @@ CONTENTS="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
 RESOURCES_DIR="$CONTENTS/Resources"
 ICNS="$SRC_DIR/Resources/AppIcon.icns"
+ICON_PNG="$SRC_DIR/Resources/AppIcon.png"
 
 DEPLOYMENT_TARGET="macos13.0"
 
@@ -19,8 +20,13 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 if [ ! -f "$ICNS" ]; then
-    echo "==> AppIcon.icns missing — generating"
-    ./make_icon.sh
+    if [ -f "$ICON_PNG" ]; then
+        echo "==> Packing $ICON_PNG into AppIcon.icns"
+        ./set_icon.sh "$ICON_PNG"
+    else
+        echo "==> AppIcon.icns missing — generating programmatic icon"
+        ./make_icon.sh
+    fi
 fi
 
 echo "==> Collecting Swift sources"
