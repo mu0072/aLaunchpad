@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Build artifacts
+build/
+DerivedData/
+
+# Xcode (in case anyone opens via Xcode workspace later)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.swiftpm/
+
+# Generated icon (rebuilt by make_icon.sh)
+aLaunchpad/Resources/AppIcon.icns
+
+# Internal / scratch
+任务：*.md
+*.local

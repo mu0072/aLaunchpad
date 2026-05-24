@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode / Swift version
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build universal .app (arm64 + x86_64)
+        env:
+          UNIVERSAL: "1"
+        run: ./build.sh
+
+      - name: Verify binary is universal
+        run: |
+          file build/aLaunchpad.app/Contents/MacOS/aLaunchpad
+          lipo -info build/aLaunchpad.app/Contents/MacOS/aLaunchpad
+
+      - name: Package ZIP (preserves macOS metadata + signature)
+        working-directory: build
+        run: ditto -c -k --sequesterRsrc --keepParent aLaunchpad.app aLaunchpad.zip
+
+      - name: Package DMG
+        working-directory: build
+        run: |
+          hdiutil create \
+            -volname "aLaunchpad" \
+            -srcfolder aLaunchpad.app \
+            -ov -format UDZO \
+            aLaunchpad.dmg
+
+      - name: Generate checksums
+        working-directory: build
+        run: shasum -a 256 aLaunchpad.zip aLaunchpad.dmg > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/aLaunchpad.zip
+            build/aLaunchpad.dmg
+            build/SHA256SUMS.txt
+          body: |
+            ## Downloads
+
+            - `aLaunchpad.zip` — universal `.app` bundle (arm64 + x86_64)
+            - `aLaunchpad.dmg` — disk image, same universal `.app`
+            - `SHA256SUMS.txt` — SHA-256 checksums
+
+            ## First launch (macOS Gatekeeper)
+
+            The binary is **ad-hoc signed** (not notarized by Apple), so the first
+            time you open it macOS will refuse with *"Apple cannot verify aLaunchpad
+            is free of malware"*. To allow it:
+
+            1. Double-click the app once. It gets blocked — expected.
+            2. Open **System Settings → Privacy & Security**.
+            3. Scroll to the **Security** section and click **Open Anyway** next to
+               the aLaunchpad notice.
+            4. Confirm in the next dialog. From then on the app opens normally.
+
+            Or from Terminal:
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/aLaunchpad.app
+            ```
