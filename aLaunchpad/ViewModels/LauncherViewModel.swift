@@ -5,6 +5,7 @@ import SwiftUI
 final class LauncherViewModel: ObservableObject {
     /// Sort order options exposed in the toolbar menu.
     enum SortOption: String, CaseIterable, Identifiable {
+        case custom
         case nameAsc
         case nameDesc
         case dateNewest
@@ -12,12 +13,34 @@ final class LauncherViewModel: ObservableObject {
 
         var id: String { rawValue }
 
+        /// Tooltip / menu label, localized at runtime so Chinese-system users
+        /// see Chinese and everyone else sees English. Avoids needing a full
+        /// .strings/.xcloc localization pipeline for a handful of strings.
         var label: String {
+            let isChinese = Locale.current.language.languageCode?.identifier.hasPrefix("zh") ?? false
             switch self {
-            case .nameAsc:    return "Name (A → Z)"
-            case .nameDesc:   return "Name (Z → A)"
-            case .dateNewest: return "Date Added (Newest)"
-            case .dateOldest: return "Date Added (Oldest)"
+            case .custom:
+                return isChinese ? "自定义排序" : "Custom Order"
+            case .nameAsc:
+                return isChinese ? "按名称升序 (A → Z)" : "Name (A → Z)"
+            case .nameDesc:
+                return isChinese ? "按名称降序 (Z → A)" : "Name (Z → A)"
+            case .dateNewest:
+                return isChinese ? "按安装时间降序（最新优先）" : "Date Added (Newest)"
+            case .dateOldest:
+                return isChinese ? "按安装时间升序（最早优先）" : "Date Added (Oldest)"
+            }
+        }
+
+        /// Name of the bundled PNG (in Contents/Resources) shown on the
+        /// toolbar sort button and next to each item in the dropdown.
+        var iconAssetName: String {
+            switch self {
+            case .custom:     return "sort_custom"
+            case .nameAsc:    return "sort_nameAsc"
+            case .nameDesc:   return "sort_nameDesc"
+            case .dateNewest: return "sort_dateNewest"
+            case .dateOldest: return "sort_dateOldest"
             }
         }
     }
@@ -30,8 +53,12 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var isShowingArchive: Bool = false
     @Published private(set) var isScanning: Bool = false
     @Published var selectedID: String?
-    @Published private(set) var sortOption: SortOption = .nameAsc
+    @Published private(set) var sortOption: SortOption = .custom
     @Published private(set) var currentPage: Int = 0
+    /// Persisted user-defined order — list of `AppItem.id` values in the order
+    /// they should appear when `sortOption == .custom`. New apps detected by
+    /// the scanner are appended to the end so positions stay stable.
+    @Published private(set) var customOrder: [String] = []
 
     /// Classic Launchpad-style fixed grid: 8 across × 4 down per page.
     let columnsPerPage: Int = 8
@@ -43,6 +70,7 @@ final class LauncherViewModel: ObservableObject {
     private let legacyHiddenKey = "aLaunchpad.hidden"
     private let legacyShowHiddenKey = "aLaunchpad.showHidden"
     private let sortKey = "aLaunchpad.sortOption"
+    private let customOrderKey = "aLaunchpad.customOrder"
     private let defaults = UserDefaults.standard
 
     init() {
@@ -63,6 +91,8 @@ final class LauncherViewModel: ObservableObject {
            let opt = SortOption(rawValue: raw) {
             sortOption = opt
         }
+
+        customOrder = defaults.stringArray(forKey: customOrderKey) ?? []
     }
 
     // MARK: - Derived state
@@ -101,6 +131,17 @@ final class LauncherViewModel: ObservableObject {
 
     private func sorted(_ list: [AppItem]) -> [AppItem] {
         switch sortOption {
+        case .custom:
+            // O(n) sort: build an index lookup once, then sort by it. IDs not
+            // present in customOrder (newly discovered but not yet reconciled)
+            // sort to the end in their natural arrival order.
+            let order = Dictionary(uniqueKeysWithValues: customOrder.enumerated().map { ($1, $0) })
+            return list.sorted { a, b in
+                let ia = order[a.id] ?? Int.max
+                let ib = order[b.id] ?? Int.max
+                if ia != ib { return ia < ib }
+                return a.id < b.id
+            }
         case .nameAsc:
             // Sort by the pinyin-folded form so "迅雷" sorts under 'x' alongside
             // latin names, matching the intuitive A-Z reading order.
@@ -191,6 +232,46 @@ final class LauncherViewModel: ObservableObject {
         resetSelectionToFirst()
     }
 
+    // MARK: - Custom order
+
+    /// Keep `customOrder` in sync with what's actually on disk: drop IDs of
+    /// uninstalled apps, append newly discovered ones at the global end so
+    /// existing positions never shift around the user.
+    func reconcileCustomOrder(with apps: [AppItem]) {
+        let presentIDs = Set(apps.map(\.id))
+        var next = customOrder.filter { presentIDs.contains($0) }
+        let known = Set(next)
+        for app in apps where !known.contains(app.id) {
+            next.append(app.id)
+        }
+        guard next != customOrder else { return }
+        customOrder = next
+        persistCustomOrder()
+    }
+
+    /// Replace the entire custom order — used on drag commit so we don't pay
+    /// a remove+insert pair for every move.
+    func setCustomOrder(_ ids: [String]) {
+        guard ids != customOrder else { return }
+        customOrder = ids
+        persistCustomOrder()
+    }
+
+    /// Move a single app to a target index (clamped). Used by tests / future
+    /// keyboard reordering. Drag-to-reorder uses `setCustomOrder` instead.
+    func moveCustomItem(id: String, to index: Int) {
+        guard let from = customOrder.firstIndex(of: id) else { return }
+        var next = customOrder
+        next.remove(at: from)
+        let clamped = max(0, min(index, next.count))
+        next.insert(id, at: clamped)
+        setCustomOrder(next)
+    }
+
+    private func persistCustomOrder() {
+        defaults.set(customOrder, forKey: customOrderKey)
+    }
+
     func clearSearch() { search = "" }
 
     func resetTransientState() {
@@ -233,6 +314,7 @@ final class LauncherViewModel: ObservableObject {
             let scanned = await AppScanner.scan()
             let previousID = self.selectedID
             self.allApps = scanned
+            self.reconcileCustomOrder(with: scanned)
             self.isScanning = false
             // Preserve the user's selection across rescans (e.g. FSEvents-driven
             // ones that fire mid-search). Only fall back to "first item" if the
