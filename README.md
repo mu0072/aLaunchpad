@@ -88,17 +88,19 @@ That's it. No accounts, no permissions prompts, no background daemon.
 - **Substring + initials** — both full pinyin (`wei xin`) and initials (`wx`) match.
 
 ### Favorites & Archive
-- **Favorites** are pushed to the front of the paged list, so they always occupy the first page.
+- **Favorites** are pushed to the front of the paged list, so they always occupy the first page. Under Custom sort, favorites and non-favorites each respect the drag order within their own group, so dragging a non-favorite around never reshuffles which apps are pinned to page 1.
 - **Archive** (v1.2) — hover any app icon and click the small `archivebox` button in its top-right corner to move it out of the main grid. The 📦 icon next to the sort button opens the archived-apps view (in-place switch, same panel); click the small button again in archive view to restore. Archived apps still appear in main-view search results, rendered dimmed with a small corner badge, and Enter launches them normally.
 - v1.1 users: the old `Hide` mechanism is replaced. Existing `aLaunchpad.hidden` data is migrated automatically to `aLaunchpad.archived` on first launch.
 - All preferences persist to `UserDefaults` keyed under `aLaunchpad.*`.
 
 ### Sort
-- **Name (A → Z)** — default
+- **Custom (drag to rearrange)** — default for fresh installs (v1.3). Drag any icon to a new slot on the page; the icons currently in the way animate aside to preview the drop. Hold the dragged icon in the leftmost or rightmost 30 pt gutter for ~0.6 s to flip the page so you can drop across pages. On release the icon snaps into the hovered slot and the new order is persisted to `UserDefaults` under `aLaunchpad.customOrder`. Newly-detected apps are appended to the global end on every rescan, so a fresh install never reshuffles your layout.
+- **Name (A → Z)**
 - **Name (Z → A)**
 - **Date Added (Newest)** — uses filesystem creation date via `URLResourceKey.creationDateKey`
 - **Date Added (Oldest)**
-- Selection persists across launches.
+- The sort toolbar button uses one of five bespoke PNG glyphs (`sort_custom`, `sort_nameAsc`, `sort_nameDesc`, `sort_dateNewest`, `sort_dateOldest`) cropped from a single sprite sheet; tooltip and dropdown labels are locale-aware (Chinese on `zh*` systems, English otherwise).
+- Sort selection persists across launches.
 
 ### Window behavior
 - Borderless, non-activating `NSPanel` subclass that still accepts key focus
@@ -150,12 +152,13 @@ A pastel pink-and-blue "a" with scattered rounded squares, packed into the bundl
 | Click app icon | Launch the app, hide the launcher |
 | Right-click app icon | Context menu — Add/Remove Favorites · Archive / Unarchive · Reveal in Finder |
 | Hover or keyboard-select an app icon | Small archive / unarchive button floats in its top-right corner |
+| Drag app icon (Custom sort only) | Rearrange icons on the page; hold near the left/right edge for ~0.6 s to flip pages and drop across pages |
 | Two-finger swipe (trackpad / Magic Mouse) | Flip to the previous / next page |
 | Click a dot in the page indicator | Jump to that page |
 | Click blank area in launcher | Hide the launcher |
 | Click any other app / desktop / Dock | Hide the launcher |
 | 📦 icon at right of search row | Toggle the archived-apps view |
-| ↕ icon at right of search row | Sort menu — Name (A→Z / Z→A) · Date Added (Newest / Oldest) |
+| Sort icon at right of search row | Sort menu — Custom (drag) · Name (A→Z / Z→A) · Date Added (Newest / Oldest) |
 
 ---
 
@@ -231,7 +234,12 @@ aLaunchpad/                              # project root
     ├── AppDelegate.swift                # @MainActor — menu bar + lifecycle
     ├── Resources/
     │   ├── AppIcon.png                  # 1254×1254 source PNG packed by set_icon.sh
-    │   └── AppIcon.icns                 # generated at build time (gitignored)
+    │   ├── AppIcon.icns                 # generated at build time (gitignored)
+    │   ├── sort_custom.png              # toolbar glyph — Custom (drag)
+    │   ├── sort_nameAsc.png             # toolbar glyph — Name A→Z
+    │   ├── sort_nameDesc.png            # toolbar glyph — Name Z→A
+    │   ├── sort_dateNewest.png          # toolbar glyph — Date Added (Newest)
+    │   └── sort_dateOldest.png          # toolbar glyph — Date Added (Oldest)
     ├── Models/
     │   ├── AppItem.swift                # value-type app model + dateAdded
     │   └── Pinyin.swift                 # CFStringTransform + SearchTokens
@@ -242,7 +250,8 @@ aLaunchpad/                              # project root
     │   ├── HotkeyManager.swift          # Carbon ⌥Space global hotkey
     │   └── IconCache.swift              # @MainActor NSImage cache
     ├── ViewModels/
-    │   └── LauncherViewModel.swift      # @MainActor MVVM center
+    │   ├── LauncherViewModel.swift      # @MainActor MVVM center
+    │   └── DragController.swift         # drag/drop state for Custom sort (v1.3)
     ├── Views/
     │   ├── ContentView.swift            # root view + click-eater layers
     │   ├── AppGridView.swift            # paged 8×4 grid + dynamic row spacing
@@ -351,10 +360,11 @@ A: Not yet — see [Roadmap](#roadmap). PRs welcome.
 3. **Icon LRU + disk cache** — bound memory on machines with hundreds of apps
 4. **Usage-based ranking** — surface frequently launched apps first
 5. **Configurable page grid** — preference to change columns/rows per page
-6. **Drag-to-reorder + drag-between-pages** — closer to the original Launchpad ordering model
-7. **Developer ID signing + notarization** — drop the Gatekeeper prompt
-8. **Tests** — unit tests for `AppScanner`, `SearchTokens.matches`, `LauncherViewModel`
-9. **Localization** — extract hard-coded Chinese UI strings into `Localizable.strings`
+6. **Developer ID signing + notarization** — drop the Gatekeeper prompt
+7. **Tests** — unit tests for `AppScanner`, `SearchTokens.matches`, `LauncherViewModel`
+8. **Localization** — extract hard-coded Chinese UI strings into `Localizable.strings`
+
+> v1.3 shipped drag-to-reorder + drag-between-pages (Custom sort). v1.2 shipped Archive. See [Releases](https://github.com/mu0072/aLaunchpad/releases) for the full history.
 
 ---
 

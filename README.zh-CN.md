@@ -88,16 +88,18 @@ xattr -dr com.apple.quarantine /Applications/aLaunchpad.app
 - **子串 + 首字母** —— 全拼（`wei xin`）和首字母（`wx`）都能命中。
 
 ### 收藏与归档
-- **收藏** 会被推到分页列表最前面，永远占据第一页。
+- **收藏** 会被推到分页列表最前面，永远占据第一页。在「自定义」排序下，收藏和非收藏各自按拖拽顺序排列，所以拖动非收藏图标永远不会打乱钉在第一页的收藏。
 - **归档**（v1.2 新增）—— 鼠标悬停任意应用图标，点击右上角小 `archivebox` 按钮即可移出主栅格。搜索栏右侧的 📦 图标可切换到归档视图（原位切换，同一面板），归档视图中再次点击小按钮即可恢复。已归档的应用仍会在主视图搜索结果中出现，以暗色 + 右上角角标显示，Enter 仍可正常启动。
 - v1.1 老用户：旧的 `Hide` 机制已废弃。首次启动时 `aLaunchpad.hidden` 数据会自动迁移到 `aLaunchpad.archived`。
 - 所有偏好持久化到 `UserDefaults`，key 前缀为 `aLaunchpad.*`。
 
 ### 排序
-- **名称（A → Z）** —— 默认
+- **自定义（拖拽排序）** —— 全新安装的默认值（v1.3）。拖动任意图标到页面上的新位置，被挤开的图标会动画让位以预览落点；将拖动的图标在最左或最右 30 pt 边缘区域按住约 0.6 秒会自动翻页，可实现跨页拖放。释放时图标吸附到悬停槽位，新顺序持久化到 `UserDefaults` 的 `aLaunchpad.customOrder`。每次重新扫描时新发现的应用会追加到全局末尾，所以装新软件不会打乱已有布局。
+- **名称（A → Z）**
 - **名称（Z → A）**
 - **添加时间（最新）** —— 用 `URLResourceKey.creationDateKey` 取文件系统创建时间
 - **添加时间（最早）**
+- 工具栏排序按钮使用五张专门绘制的 PNG 图标（`sort_custom`、`sort_nameAsc`、`sort_nameDesc`、`sort_dateNewest`、`sort_dateOldest`），从单张精灵图裁切；tooltip 和下拉菜单标签会根据系统语言切换（`zh*` 系统显示中文，其他显示英文）。
 - 排序选择跨启动保持。
 
 ### 窗口行为
@@ -150,12 +152,13 @@ xattr -dr com.apple.quarantine /Applications/aLaunchpad.app
 | 点击应用图标 | 启动应用并隐藏启动器 |
 | 右键应用图标 | 上下文菜单 —— 添加/移除收藏 · 归档/取消归档 · 在访达中显示 |
 | 悬停或键盘选中应用图标 | 右上角浮出归档/取消归档小按钮 |
+| 拖动应用图标（仅自定义排序） | 在当前页重排；在最左/最右边缘按住约 0.6 秒触发翻页，可跨页拖放 |
 | 两指滑动（触控板 / Magic Mouse） | 上一页 / 下一页 |
 | 点击底部指示点 | 跳转到指定页 |
 | 点击启动器空白区域 | 隐藏启动器 |
 | 点击其他应用 / 桌面 / Dock | 隐藏启动器 |
 | 搜索栏右侧 📦 图标 | 切换归档应用视图 |
-| 搜索栏右侧 ↕ 图标 | 排序菜单 —— 名称（A→Z / Z→A）· 添加时间（最新 / 最早） |
+| 搜索栏右侧排序图标 | 排序菜单 —— 自定义（拖拽）· 名称（A→Z / Z→A）· 添加时间（最新 / 最早） |
 
 ---
 
@@ -231,7 +234,12 @@ aLaunchpad/                              # 项目根目录
     ├── AppDelegate.swift                # @MainActor — 菜单栏 + 生命周期
     ├── Resources/
     │   ├── AppIcon.png                  # 1254×1254 源 PNG，由 set_icon.sh 打包
-    │   └── AppIcon.icns                 # 构建时生成（已 gitignore）
+    │   ├── AppIcon.icns                 # 构建时生成（已 gitignore）
+    │   ├── sort_custom.png              # 工具栏图标 —— 自定义（拖拽）
+    │   ├── sort_nameAsc.png             # 工具栏图标 —— 名称 A→Z
+    │   ├── sort_nameDesc.png            # 工具栏图标 —— 名称 Z→A
+    │   ├── sort_dateNewest.png          # 工具栏图标 —— 添加时间（最新）
+    │   └── sort_dateOldest.png          # 工具栏图标 —— 添加时间（最早）
     ├── Models/
     │   ├── AppItem.swift                # 应用值类型 + dateAdded
     │   └── Pinyin.swift                 # CFStringTransform + SearchTokens
@@ -242,7 +250,8 @@ aLaunchpad/                              # 项目根目录
     │   ├── HotkeyManager.swift          # Carbon ⌥Space 全局快捷键
     │   └── IconCache.swift              # @MainActor NSImage 缓存
     ├── ViewModels/
-    │   └── LauncherViewModel.swift      # @MainActor MVVM 核心
+    │   ├── LauncherViewModel.swift      # @MainActor MVVM 核心
+    │   └── DragController.swift         # 自定义排序拖放状态（v1.3）
     ├── Views/
     │   ├── ContentView.swift            # 根视图 + click-eater 层
     │   ├── AppGridView.swift            # 分页 8×4 栅格 + 动态行距
@@ -351,10 +360,11 @@ A: 目前固定 —— 见 [路线图](#路线图)。欢迎 PR。
 3. **图标 LRU + 磁盘缓存** —— 限制有几百个应用机器上的内存
 4. **基于使用频率排序** —— 常用应用排前面
 5. **可配置分页栅格** —— 允许偏好设置改列/行数
-6. **拖拽排序 + 跨页拖拽** —— 更贴近原版 Launchpad 排序模型
-7. **Developer ID 签名 + 公证** —— 去掉 Gatekeeper 提示
-8. **测试** —— 给 `AppScanner`、`SearchTokens.matches`、`LauncherViewModel` 写单元测试
-9. **国际化** —— 把硬编码的中文 UI 字符串提取到 `Localizable.strings`
+6. **Developer ID 签名 + 公证** —— 去掉 Gatekeeper 提示
+7. **测试** —— 给 `AppScanner`、`SearchTokens.matches`、`LauncherViewModel` 写单元测试
+8. **国际化** —— 把硬编码的中文 UI 字符串提取到 `Localizable.strings`
+
+> v1.3 已实现拖拽排序 + 跨页拖拽（自定义排序），v1.2 已实现归档功能。完整历史见 [Releases](https://github.com/mu0072/aLaunchpad/releases)。
 
 ---
 
