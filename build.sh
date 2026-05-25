@@ -71,6 +71,14 @@ echo "==> Copying Info.plist + AppIcon.icns"
 cp "$SRC_DIR/Info.plist" "$CONTENTS/Info.plist"
 cp "$ICNS" "$RESOURCES_DIR/AppIcon.icns"
 
+# Copy any sort_*.png icons into the bundle so Bundle.main can find them
+# at runtime via Image(...) loaders.
+shopt -s nullglob
+for png in "$SRC_DIR/Resources/"sort_*.png; do
+    cp "$png" "$RESOURCES_DIR/"
+done
+shopt -u nullglob
+
 # Ad-hoc sign so macOS doesn't quarantine on every launch in dev.
 codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
 

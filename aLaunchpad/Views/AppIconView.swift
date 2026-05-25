@@ -7,6 +7,19 @@ struct AppIconView: View {
     @ObservedObject var viewModel: LauncherViewModel
     var onLaunch: (AppItem) -> Void
 
+    /// Set by the parent when this icon is the one currently being dragged so
+    /// the cell can scale up + shadow + lift above its neighbours.
+    var isBeingDragged: Bool = false
+    /// Visual offset the dragged cell should ride at — set by the parent each
+    /// drag tick so the icon stays under the finger even as its grid slot
+    /// updates (push-aside re-layout).
+    var dragOffset: CGSize = .zero
+    /// Coordinate space (named on the grid's GeometryReader) the parent uses
+    /// to interpret drag locations. Nil disables the drag gesture entirely.
+    var gridCoordinateSpace: String? = nil
+    var onDragChanged: ((DragGesture.Value) -> Void)? = nil
+    var onDragEnded: ((DragGesture.Value) -> Void)? = nil
+
     @State private var iconImage: NSImage?
     @State private var isHovering = false
 
@@ -81,11 +94,16 @@ struct AppIconView: View {
                 .stroke(isSelected ? Color.white.opacity(0.45) : Color.clear, lineWidth: 1)
         )
         .contentShape(Rectangle())
+        .scaleEffect(isBeingDragged ? 1.08 : 1.0)
+        .shadow(color: .black.opacity(isBeingDragged ? 0.35 : 0), radius: 14, x: 0, y: 6)
+        .offset(dragOffset)
+        .zIndex(isBeingDragged ? 10 : 0)
         .onTapGesture { onLaunch(app) }
         .onHover { hovering in
             isHovering = hovering
         }
         .animation(.easeOut(duration: 0.12), value: isHovering)
+        .gesture(dragGesture)
         .contextMenu {
             if viewModel.favorites.contains(app.id) {
                 Button("Remove from Favorites") { viewModel.toggleFavorite(app) }
@@ -105,5 +123,21 @@ struct AppIconView: View {
         .task(id: app.id) {
             self.iconImage = IconCache.icon(for: app.url)
         }
+    }
+
+    /// Drag gesture that activates only when the parent provided a coordinate
+    /// space + callbacks. minimumDistance of 6 lets quick taps still fall
+    /// through to `.onTapGesture` for launching.
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 6,
+                    coordinateSpace: gridCoordinateSpace.map { .named($0) } ?? .local)
+            .onChanged { value in
+                guard gridCoordinateSpace != nil else { return }
+                onDragChanged?(value)
+            }
+            .onEnded { value in
+                guard gridCoordinateSpace != nil else { return }
+                onDragEnded?(value)
+            }
     }
 }
